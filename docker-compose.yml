@@ -4,15 +4,13 @@ services:
         build:
             context: .
             dockerfile: Dockerfile
-        image: node-app:18
+        image: node-app:latest
         ports:
             - "3333:3333"
         environment:
             - DATABASE_URL=postgres://postgres:159357@postgres-db:5432/hakaton_db
         networks:
             - app-network
-        depends_on:
-            - postgres-db
         restart: unless-stopped
 
 networks:
