@@ -1,6 +1,6 @@
 const express = require("express");
 const app = express();
-const port = 3000;
+const port = 3333;
 const httpPort = 3001; // Порт для HTTP
 const path = require("path");
 const https = require("https");
