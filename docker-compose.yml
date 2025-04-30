@@ -1,19 +1,5 @@
 version: "3.8"
 services:
-    postgres-db:
-        image: postgres:17
-        environment:
-            - POSTGRES_USER=postgres
-            - POSTGRES_PASSWORD=159357
-            - POSTGRES_DB=hakaton_db
-        ports:
-            - "5434:5432"
-        volumes:
-            - postgres-data:/var/lib/postgresql/data
-        networks:
-            - app-network
-        restart: unless-stopped
-
     node-app:
         build:
             context: .
@@ -29,9 +15,6 @@ services:
             - postgres-db
         restart: unless-stopped
 
-volumes:
-    postgres-data:
-
 networks:
     app-network:
-        driver: bridge
+        external: true
