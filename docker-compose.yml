@@ -8,7 +8,7 @@ services:
         ports:
             - "3333:3333"
         environment:
-            - DATABASE_URL=postgres://postgre:159357@hakaton_db-postgres-db-1:5434/hakaton_db
+            - DATABASE_URL=postgres://postgres:159357@hakaton_db-postgres-db-1:5434/hakaton_db
         networks:
             - app-network
         restart: unless-stopped
