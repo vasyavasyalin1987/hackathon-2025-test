@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 node_modules/
 npm-debug.log
 
@@ -10,3 +11,6 @@ npm-debug.log
 logs/
 *.log
 *.log.*
+=======
+node_modules/
+>>>>>>> c5fbc06558ed37b6587001b5b28213df6cb57ef8
