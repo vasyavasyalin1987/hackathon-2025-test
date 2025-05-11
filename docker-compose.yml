@@ -5,7 +5,7 @@ services:
             dockerfile: Dockerfile
         image: node-app:18
         ports:
-            - "3333:3333"
+            - "3334:3334"
         environment:
             - DATABASE_URL=postgres://postgres:159357@hakaton_db-postgres-db-1:5434/hakaton_db
         networks:

@@ -1,6 +1,6 @@
 const express = require("express");
 const app = express();
-const port = 3333;
+const port = 3334;
 const httpPort = 3001; // Порт для HTTP
 const path = require("path");
 const https = require("https");
@@ -21,7 +21,7 @@ const {
 	logoutUser,
 } = require("./app/controllers/auth");
 const session = require("express-session");
-const { Role, Account } = require("./app/models/modelsDB");
+const { Account, Dish, Favorites } = require("./app/models/modelsDB");
 const privateKey = fs.readFileSync("localhost+2-key.pem");
 const certificate = fs.readFileSync("localhost+2.pem");
 const { Op, where } = require("sequelize");
@@ -38,113 +38,21 @@ app.use(
 	})
 );
 
-function generatePassword() {
-	var length = 8,
-		charset =
-			"abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-	res = "";
-	for (var i = 0, n = charset.length; i < length; ++i) {
-		res += charset.charAt(Math.floor(Math.random() * n));
-	}
-	return res;
-}
-
-const isAdmin = async (req, res, next) => {
-	// Проверка на администратора
-	try {
-		token_body = req.headers.token;
-
-		const acc = await Account.findOne({
-			where: {
-				token: token_body,
-			},
-		});
-
-		if (acc.role_id == 1) {
-			return next();
-		}
-	} catch {
-		res.sendStatus(403);
-	}
-	res.sendStatus(403);
-};
-
-const isPartner = async (req, res, next) => {
-	// Проверка на предприятия-партнёра
-	try {
-		token_body = req.headers.token;
-
-		const acc = await Account.findOne({
-			where: {
-				token: token_body,
-			},
-		});
-
-		if (acc.role_id == 2) {
-			return next();
-		}
-	} catch {
-		res.sendStatus(403);
-	}
-	res.sendStatus(403);
-};
-
-const isVolonter = async (req, res, next) => {
-	// Проверка на волонтёра
-	try {
-		token_body = req.headers.token;
-
-		const acc = await Account.findOne({
-			where: {
-				token: token_body,
-			},
-		});
-
-		if (acc.role_id == 3) {
-			return next();
-		}
-	} catch {
-		res.sendStatus(403);
-	}
-	res.sendStatus(403);
-};
-
 // Маршрут для регистрации
-app.post("/register_volonter", async (req, res) => {
+app.post("/register", async (req, res) => {
 	const { login, password } = req.body;
 
 	if (!login || !password) {
 		return res.status(400).json({ message: "Не все поля указаны" });
 	}
 
-	const result = await registerUser({ login, password, role_id: 3 }); // 3 - id волонтёра
+	const result = await registerUser({ login, password });
 
 	if (result.success) {
 		res.json(result.user);
 	} else {
 		res.status(400).json({ message: result.message });
 	}
-});
-
-// Маршрут для регистрации
-app.post("/register_partner", async (req, res) => {
-	const { login, password } = req.body;
-
-	if (!login || !password) {
-		return res.status(400).json({ message: "Не все поля указаны" });
-	}
-
-	const result = await registerUser({ login, password, role_id: 2 }); // 2 - id предприятия-партнёра
-
-	if (result.success) {
-		res.json(result.user);
-	} else {
-		res.status(400).json({ message: result.message });
-	}
-});
-
-app.get("/auth_test", isAuthenticated, async (req, res) => {
-	res.json({ text: "Пользователь авторизован" });
 });
 
 // Маршрут для логина
@@ -159,78 +67,305 @@ app.post("/login", async (req, res) => {
 	}
 });
 
-// Маршрут для проверки авторизации
-app.get(
-	"/check",
-	passport.authenticate("jwt", { session: false }),
-	(req, res) => {
-		res.json({
-			isAuthenticated: true,
-			user: {
-				id: req.user.id,
-				login: req.user.login,
-				role: req.user.role,
-			},
-		});
-	}
-);
-
 // Маршрут для выхода
-app.post(
-	"/logout",
-	passport.authenticate("jwt", { session: false }),
-	logoutUser
-);
+app.post("/logout", logoutUser);
 
-// Маршрут для удаления пользователя (только для админа)
-app.delete(
-	"/user/:id",
-	passport.authenticate("jwt", { session: false }),
-	isAdmin,
-	async (req, res) => {
-		const userId = parseInt(req.params.id, 10);
-		if (isNaN(userId)) {
+// Просмотр всех блюд (public)
+app.get("/dishes", async (req, res) => {
+	try {
+		const dishes = await Dish.findAll({
+			attributes: ["id", "naim", "description", "cooking_time"],
+		});
+		res.json(dishes);
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Поиск по ключевым словам (public)
+app.get("/dishes/search", async (req, res) => {
+	const { query } = req.query;
+	if (!query)
+		return res.status(400).json({ error: "Query parameter is required" });
+
+	try {
+		const dishes = await Dish.findAll({
+			where: {
+				[Op.or]: [
+					{ naim: { [Op.iLike]: `%${query}%` } },
+					{ description: { [Op.iLike]: `%${query}%` } },
+				],
+			},
+			attributes: ["id", "naim", "description", "cooking_time"],
+		});
+		res.json(dishes);
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Подробная информация о блюде (public, with isFavorited)
+app.get("/dishes/:id", isAuthenticated, async (req, res) => {
+	const { id } = req.params;
+	const { people } = req.query; // Optional: number of people for cost calculation
+
+	try {
+		const dish = await Dish.findByPk(id, {
+			include: [{ model: Account, as: "account", attributes: ["login"] }],
+		});
+		if (!dish) return res.status(404).json({ error: "Dish not found" });
+
+		// Check if the dish is favorited by the authenticated user
+		let isFavorited = false;
+		if (req.user) {
+			const favorite = await Favorites.findOne({
+				where: {
+					id_acc: req.user.id,
+					id_dish: id,
+				},
+			});
+			isFavorited = !!favorite;
+		}
+
+		// Calculate cost based on ingredients (example logic)
+		let cost = 0;
+		if (dish.ingredients && people) {
+			const numPeople = parseInt(people, 10) || 1;
+			cost = Object.values(dish.ingredients).reduce(
+				(total, ingredient) => {
+					return total + (ingredient.price || 0) * numPeople;
+				},
+				0
+			);
+		}
+
+		res.json({ ...dish.toJSON(), cost, isFavorited });
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Создание нового блюда (authenticated)
+app.post("/dishes", isAuthenticated, async (req, res) => {
+	const { naim, description, cooking_time, ingredients } = req.body;
+	if (!naim) return res.status(400).json({ error: "Dish name is required" });
+
+	try {
+		const dish = await Dish.create({
+			id_acc: req.user.id,
+			naim: naim,
+			description: description,
+			cooking_time: cooking_time,
+			ingredients: ingredients,
+		});
+		res.status(201).json(dish);
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Обновление блюда (authenticated, только собственные блюда)
+app.put("/dishes/:id", isAuthenticated, async (req, res) => {
+	const { id } = req.params;
+	const { naim, description, cooking_time, ingredients } = req.body;
+
+	try {
+		const dish = await Dish.findByPk(id);
+		if (!dish) return res.status(404).json({ error: "Dish not found" });
+		if (dish.id_acc !== req.user.id)
+			return res.status(403).json({ error: "Not authorized" });
+
+		await dish.update({ naim, description, cooking_time, ingredients });
+		res.json(dish);
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Удаление блюда (authenticated, только собственные блюда)
+app.delete("/dishes/:id", isAuthenticated, async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		const dish = await Dish.findByPk(id);
+		if (!dish) return res.status(404).json({ error: "Dish not found" });
+		if (dish.id_acc !== req.user.id)
+			return res.status(403).json({ error: "Not authorized" });
+
+		await dish.destroy();
+		res.status(204).send();
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Добавление блюда в избранные (authenticated)
+app.post("/favorites/:dishId", isAuthenticated, async (req, res) => {
+	const { dishId } = req.params;
+
+	try {
+		const dish = await Dish.findByPk(dishId);
+		if (!dish) return res.status(404).json({ error: "Dish not found" });
+
+		const existingFavorite = await Favorites.findOne({
+			where: { id_acc: req.user.id, id_dish: dishId },
+		});
+		if (existingFavorite)
+			return res.status(400).json({ error: "Dish already in favorites" });
+
+		const favorite = await Favorites.create({
+			id_acc: req.user.id,
+			id_dish: dishId,
+		});
+		res.status(201).json(favorite);
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Удаление блюда из списка избранных (authenticated)
+app.delete("/favorites/:dishId", isAuthenticated, async (req, res) => {
+	const { dishId } = req.params;
+
+	try {
+		const favorite = await Favorites.findOne({
+			where: { id_acc: req.user.id, id_dish: dishId },
+		});
+		if (!favorite)
+			return res.status(404).json({ error: "Favorite not found" });
+
+		await favorite.destroy();
+		res.status(204).send();
+	} catch (error) {
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Получение списка избранных блюд (authenticated)
+app.get("/favorites", isAuthenticated, async (req, res) => {
+	if (!req.user) {
+		return res.status(401).json({ error: "Authentication required" });
+	}
+
+	try {
+		const favorites = await Favorites.findAll({
+			where: { id_acc: req.user.id },
+			include: [
+				{
+					model: Dish,
+					as: "dish",
+					attributes: [
+						"id",
+						"naim",
+						"description",
+						"cooking_time",
+						"ingredients",
+					],
+					include: [
+						{
+							model: Account,
+							as: "account",
+							attributes: ["login"],
+						},
+					],
+				},
+			],
+		});
+
+		// Map favorites to include dish details and isFavorited: true
+		const favoriteDishes = favorites.map((fav) => ({
+			...fav.dish.toJSON(),
+			isFavorited: true,
+		}));
+
+		res.json(favoriteDishes);
+	} catch (error) {
+		console.error(error);
+		res.status(500).json({ error: "Internal server error" });
+	}
+});
+
+// Рекомендации по блюду (authenticated)
+app.get("/recommendations/:id", isAuthenticated, async (req, res) => {
+	const { id } = req.params;
+
+	try {
+		// Fetch the target dish
+		const targetDish = await Dish.findByPk(id, {
+			attributes: ["id", "ingredients"],
+		});
+		if (!targetDish)
+			return res.status(404).json({ error: "Dish not found" });
+		if (!targetDish.ingredients)
 			return res
 				.status(400)
-				.json({ message: "Некорректный ID пользователя" });
-		}
+				.json({ error: "No ingredients available for this dish" });
 
-		const result = await deleteUser(userId);
-		if (result.success) {
-			res.json({ message: result.message });
-		} else {
-			res.status(400).json({ message: result.message });
-		}
-	}
-);
+		// Extract ingredients from the target dish
+		const targetIngredients = new Map();
+		Object.entries(targetDish.ingredients).forEach(([name, details]) => {
+			targetIngredients.set(name, details.quantity || 1);
+		});
 
-// Пример защищенных маршрутов для разных ролей
-app.get(
-	"/admin",
-	passport.authenticate("jwt", { session: false }),
-	isAdmin,
-	(req, res) => {
-		res.json({ message: "Доступ для администратора", user: req.user });
-	}
-);
+		// Query all other dishes (excluding the target dish)
+		const allDishes = await Dish.findAll({
+			where: {
+				id: { [Op.ne]: id },
+			},
+			attributes: [
+				"id",
+				"naim",
+				"description",
+				"cooking_time",
+				"ingredients",
+			],
+		});
 
-app.get(
-	"/partner",
-	passport.authenticate("jwt", { session: false }),
-	isPartner,
-	(req, res) => {
-		res.json({ message: "Доступ для партнера", user: req.user });
-	}
-);
+		// Calculate similarity scores based on ingredient overlap
+		const recommendations = allDishes.map((dish) => {
+			let score = 0;
+			if (dish.ingredients) {
+				const dishIngredients = new Set(Object.keys(dish.ingredients));
+				let totalOverlap = 0;
+				let quantityDiff = 0;
 
-app.get(
-	"/volonter",
-	passport.authenticate("jwt", { session: false }),
-	isVolonter,
-	(req, res) => {
-		res.json({ message: "Доступ для волонтера", user: req.user });
+				targetIngredients.forEach((targetQty, ingredient) => {
+					if (dishIngredients.has(ingredient)) {
+						totalOverlap++;
+						const dishQty =
+							dish.ingredients[ingredient].quantity || 1;
+						// Penalize quantity differences
+						quantityDiff +=
+							Math.abs(targetQty - dishQty) /
+							Math.max(targetQty, dishQty);
+					}
+				});
+
+				// Similarity score: proportion of overlapping ingredients, adjusted for quantity differences
+				const overlapRatio =
+					totalOverlap /
+					(dishIngredients.size +
+						targetIngredients.size -
+						totalOverlap);
+				score =
+					overlapRatio *
+					(1 - (totalOverlap ? quantityDiff / totalOverlap : 0));
+			}
+			return { dish, score };
+		});
+
+		// Sort by score and limit to top 5 recommendations
+		const sortedRecommendations = recommendations
+			.sort((a, b) => b.score - a.score)
+			.slice(0, 5)
+			.map((item) => item.dish);
+
+		res.json(sortedRecommendations);
+	} catch (error) {
+		console.error(error);
+		res.status(500).json({ error: "Internal server error" });
 	}
-);
+});
 
 http.createServer(app).listen(port, () => {
 	console.log(`HTTP-сервер запущен на http://localhost:${port}`);

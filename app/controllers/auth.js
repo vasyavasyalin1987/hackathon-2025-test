@@ -1,13 +1,6 @@
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
-const {
-	Account,
-	Role,
-	Volonter,
-	Partner,
-	Bonus,
-	NachBonus,
-} = require("../models/modelsDB");
+const { Account } = require("../models/modelsDB");
 
 const isAuthenticated = async (req, res, next) => {
 	try {
@@ -33,7 +26,7 @@ const isAuthenticated = async (req, res, next) => {
 				.json({ message: "Неверный или истекший токен" });
 		}
 
-		// Пользователь авторизован, сохраняем данные пользователя в req и пропускаем запрос дальше
+		// Пользователь авторизован, сохраняем данные пользователя в res и пропускаем запрос дальше
 		req.user = acc;
 		return next();
 	} catch (error) {
@@ -41,12 +34,10 @@ const isAuthenticated = async (req, res, next) => {
 		console.error("Ошибка при проверке авторизации:", error);
 		return res.status(500).json({ message: "Ошибка сервера" });
 	}
-
-	// Если что-то пошло не так и не вызван next(), возвращаем 403
 	return res.sendStatus(403);
 };
 
-async function registerUser({ login, password, role_id }) {
+async function registerUser({ login, password }) {
 	try {
 		// Проверяем, существует ли пользователь с таким логином
 		const existingUser = await Account.findOne({ where: { login } });
@@ -58,18 +49,12 @@ async function registerUser({ login, password, role_id }) {
 		}
 		console.log(login);
 
-		// Проверяем, что role_id валиден
-		const role = await Role.findOne({ where: { id: role_id } });
-		if (!role) {
-			return { success: false, message: "Указанная роль не существует" };
-		}
-
 		// Хешируем пароль
 		const hashedPassword = await bcrypt.hash(password, 10);
 
 		// Генерируем JWT-токен до создания пользователя
 		const token = jwt.sign(
-			{ id: null, login, role: role.naim }, // id будет добавлен после создания
+			{ id: null, login }, // id будет добавлен после создания
 			process.env.JWT_SECRET || "your_jwt_secret",
 			{ expiresIn: "1h" }
 		);
@@ -77,8 +62,7 @@ async function registerUser({ login, password, role_id }) {
 		const newUser = await Account.create({
 			login,
 			password: hashedPassword,
-			role_id,
-			token, // Сохраняем токен сразу
+			token, // Сохраняем токен
 		});
 
 		return {
@@ -86,7 +70,6 @@ async function registerUser({ login, password, role_id }) {
 			user: {
 				id: newUser.id,
 				login: newUser.login,
-				role: role.naim,
 				token: token,
 			},
 		};
@@ -100,7 +83,6 @@ async function authenticateUser(login, password) {
 	try {
 		const user = await Account.findOne({
 			where: { login },
-			include: [{ model: Role, as: "role" }],
 			raw: true,
 			nest: true,
 		});
@@ -110,7 +92,7 @@ async function authenticateUser(login, password) {
 		}
 
 		const token = jwt.sign(
-			{ id: user.id, login: user.login, role: user.role.naim },
+			{ id: user.id, login: user.login },
 			process.env.JWT_SECRET || "your_jwt_secret",
 			{ expiresIn: "1h" }
 		);
@@ -122,7 +104,6 @@ async function authenticateUser(login, password) {
 			user: {
 				id: user.id,
 				login: user.login,
-				role: user.role.naim,
 				token,
 			},
 		};
@@ -136,7 +117,6 @@ async function deleteUser(userId) {
 	try {
 		const user = await Account.findOne({
 			where: { id: userId },
-			include: [{ model: Role, as: "role" }],
 		});
 
 		if (!user) {

@@ -1,27 +1,7 @@
 const { Sequelize, DataTypes } = require("sequelize");
 const { sequelize } = require("./client");
 
-// Определение моделей
-const Role = sequelize.define(
-	"Role",
-	{
-		id: {
-			type: DataTypes.INTEGER,
-			primaryKey: true,
-			autoIncrement: true,
-		},
-		naim: {
-			type: DataTypes.TEXT,
-			allowNull: false,
-		},
-	},
-	{
-		tableName: "role",
-		schema: "public",
-		timestamps: false,
-	}
-);
-
+// Define the Account model
 const Account = sequelize.define(
 	"Account",
 	{
@@ -29,24 +9,19 @@ const Account = sequelize.define(
 			type: DataTypes.INTEGER,
 			primaryKey: true,
 			autoIncrement: true,
+			allowNull: false,
 		},
 		login: {
 			type: DataTypes.TEXT,
 			allowNull: false,
-			unique: true,
 		},
 		password: {
 			type: DataTypes.TEXT,
 			allowNull: false,
 		},
-		role_id: {
-			type: DataTypes.INTEGER,
-			allowNull: false,
-		},
 		token: {
 			type: DataTypes.TEXT,
-			allowNull: false,
-			unique: true,
+			allowNull: true,
 		},
 	},
 	{
@@ -56,15 +31,111 @@ const Account = sequelize.define(
 	}
 );
 
-// Определение связей
-Role.hasMany(Account, { foreignKey: "role_id", as: "accounts" });
+// Define the Dish model
+const Dish = sequelize.define(
+	"Dish",
+	{
+		id: {
+			type: DataTypes.INTEGER,
+			primaryKey: true,
+			autoIncrement: true,
+			allowNull: false,
+		},
+		id_acc: {
+			type: DataTypes.INTEGER,
+			allowNull: false,
+		},
+		naim: {
+			type: DataTypes.TEXT,
+			allowNull: false,
+		},
+		description: {
+			type: DataTypes.TEXT,
+			allowNull: true,
+		},
+		cooking_time: {
+			type: DataTypes.TIME,
+			allowNull: true,
+		},
+		ingredients: {
+			type: DataTypes.JSONB,
+			allowNull: true,
+		},
+	},
+	{
+		tableName: "dish",
+		schema: "public",
+		timestamps: false,
+	}
+);
 
-Account.belongsTo(Role, { foreignKey: "role_id", as: "role" });
+// Define the Favorites model
+const Favorites = sequelize.define(
+	"Favorites",
+	{
+		id: {
+			type: DataTypes.INTEGER,
+			primaryKey: true,
+			autoIncrement: true,
+			allowNull: false,
+		},
+		id_acc: {
+			type: DataTypes.INTEGER,
+			allowNull: false,
+		},
+		id_dish: {
+			type: DataTypes.INTEGER,
+			allowNull: false,
+		},
+	},
+	{
+		tableName: "favorites",
+		schema: "public",
+		timestamps: false,
+	}
+);
 
-// Синхронизация моделей с базой данных
-// sequelize.sync({ alter: false });
+// Define relationships
+Account.hasMany(Dish, {
+	foreignKey: "id_acc",
+	sourceKey: "id",
+	as: "dishes",
+});
 
+Dish.belongsTo(Account, {
+	foreignKey: "id_acc",
+	targetKey: "id",
+	as: "account",
+});
+
+Account.hasMany(Favorites, {
+	foreignKey: "id_acc",
+	sourceKey: "id",
+	as: "favorites",
+});
+
+Favorites.belongsTo(Account, {
+	foreignKey: "id_acc",
+	targetKey: "id",
+	as: "account",
+});
+
+Dish.hasMany(Favorites, {
+	foreignKey: "id_dish",
+	sourceKey: "id",
+	as: "favorites",
+});
+
+Favorites.belongsTo(Dish, {
+	foreignKey: "id_dish",
+	targetKey: "id",
+	as: "dish",
+});
+
+// Export the models and sequelize instance
 module.exports = {
-	Role,
+	sequelize,
 	Account,
+	Dish,
+	Favorites,
 };
